@@ -1,0 +1,34 @@
+package KieRule
+
+import process.engine.component.RestIntCall;
+import process.engine.component.RuleHelper;
+import process.engine.vo.DataForm;
+import process.engine.vo.DataMain;
+import process.engine.vo.DataWith;
+import process.engine.vo.VoCommitTask;
+import process.engine.vo.VoNewProcInsWithPar
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+
+// 获取发电角色
+rule "PRECISE_POWER_GET_EXEC_ROLE1"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----------->BBBBBBBBB PRECISE_POWER_GET_EXEC_ROLE1:  insNodeId: {}# ", $insNodeId);
+        VoNewProcInsWithPar withPar = $helper.getVoNewProcInsWithPar($insNodeId);
+        RestIntCall call = $helper.getRestIntCall();
+
+        // 获取subroleId
+        Map<String,String> map2 = $helper.getMainData($insNodeId);
+        String assignGroupId = map2.get("assign_group_id");
+        $helper.info("-----------> PRECISE_POWER_GET_EXEC_ROLE1:  assignGroupId : {}# ", assignGroupId);
+
+        // 获取扭转desicion
+        $vo.setDecision("0");
+        $vo.setAssignGroupId(assignGroupId);
+        $vo.setRuleFlag(1);
+        $helper.info("----------->EEEEEEEEE PRECISE_POWER_GET_EXEC_ROLE1:  insNodeId: {}# ", $insNodeId);
+    end;

@@ -1,0 +1,52 @@
+package KieRule
+
+import process.engine.component.RestIntCall;
+import process.engine.component.RuleHelper;
+import process.engine.vo.VoCommitTask;
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+import java.util.List;
+
+// 获取子角色 区县 质检归档
+rule "PRECISE_POWER_GET_FINISH_ROLE1"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----------->BBBBBBBBB PRECISE_POWER_GET_FINISH_ROLE1: insNodeId: {}# ", $insNodeId);
+        RestIntCall call = $helper.getRestIntCall();
+
+        // 查询下一个节点roleId
+        String roleId = null;
+        List<Map<String, String>> response;
+        String api = String.format("/api/process-engine/query_after_in_condition/%s", $insNodeId);
+        response = call.call_2(1, "engine-inf", api, null, null);
+        if (response != null && !response.isEmpty()) {
+            roleId = (String) response.get(0).get("groupId");
+        } else {
+            roleId = "";
+        }
+
+        // 获取subroleId
+        Map<String,String> map2 = $helper.getMainData($insNodeId);
+        String city = map2.get("city_id1");
+        $helper.info("-----------> PRECISE_POWER_GET_FINISH_ROLE1:  city : {}#", city);
+        $helper.info("-----------> PRECISE_POWER_GET_FINISH_ROLE1:  roleId : {}#", roleId);
+
+        Map<String,String> searchSubRoleIdMap = new HashMap<>();
+        searchSubRoleIdMap.put("alarmRegion",city);
+        searchSubRoleIdMap.put("roleId",roleId);
+        Map<String,String> subRoleMap = call.call(1, "eserver","/eServer/centralFault/searchSubRole",searchSubRoleIdMap,null);
+
+        String assignGroupId = subRoleMap.get("processRoleId");
+        $helper.info("-----------> PRECISE_POWER_GET_FINISH_ROLE1:  assignGroupId: {}# ", assignGroupId);
+        if (assignGroupId == null || assignGroupId.equals(roleId) || assignGroupId.isEmpty()) {
+            throw new RuntimeException("获取精准发电归档角色异常： " + $insNodeId);
+        }
+
+        $vo.setDecision("0");
+        $vo.setAssignGroupId(assignGroupId);
+        $vo.setRuleFlag(1);
+        $helper.info("----------->EEEEEEEEE PRECISE_POWER_GET_FINISH_ROLE1:  insNodeId: {}# ", $insNodeId);
+    end;

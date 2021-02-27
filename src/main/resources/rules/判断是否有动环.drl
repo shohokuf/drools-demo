@@ -1,0 +1,33 @@
+package KieRule
+
+import process.engine.component.RuleHelper;
+import process.engine.vo.DataMain;
+import process.engine.vo.VoCommitTask;
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+
+// 获取
+rule "PRECISE_POWER_JUDGE_COUNTY"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----------->BBBBBBBBB PRECISE_POWER_JUDGE_COUNTY:  insNodeId: {}# ", $insNodeId);
+
+        // 获取机房动环类型： 0代表无动环；1为有动环
+        Map<String,String> map2 = $helper.getMainData($insNodeId);
+        String powerFlag = map2.get("res_power_flag");
+        $helper.info("-----------> PRECISE_POWER_JUDGE_COUNTY:  powerFlag : {}#", powerFlag);
+        String decision = null;
+        if (powerFlag != null && powerFlag.equals("1")) {
+            decision = "6";
+        } else {
+            decision = "2";
+        }
+
+        // 获取扭转desicion
+        $vo.setDecision(decision);
+        $vo.setRuleFlag(1);
+        $helper.info("----------->EEEEEEEEE PRECISE_POWER_JUDGE_COUNTY:  insNodeId: {}# ", $insNodeId);
+    end;

@@ -1,0 +1,36 @@
+package KieRule
+
+import process.engine.component.RestIntCall;
+import process.engine.component.RuleHelper;
+import process.engine.vo.VoCommitTask;
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+import java.util.List
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter;
+
+// 自动归档
+rule "PRECISE_POWER_AUTO_END"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----------->BBBBBBBBB PRECISE_POWER_AUTO_END: insNodeId: {}# ", $insNodeId);
+        RestIntCall call = $helper.getRestIntCall();
+        $helper.info("----------->IIIIIIIII PRECISE_POWER_AUTO_END:  auto finish!");
+
+        Map<String,String> map2 = new HashMap<>();
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        String curTime =  dateFormatter.format(LocalDateTime.now());
+        map2.put("status", "2");
+        map2.put("operateTime", curTime);
+        map2.put("endStatisfied","1030301");
+        map2.put("endOpinion","流程完成");
+        map2.put("endTime",curTime);
+
+        $helper.putFormData($insNodeId, map2);
+        $vo.setRuleFlag(1);
+
+        $helper.info("----------->EEEEEEEEE PRECISE_POWER_AUTO_END:  insNodeId: {}# ", $insNodeId);
+    end;

@@ -1,0 +1,118 @@
+package KieRule
+import process.engine.component.RestIntCall;
+import process.engine.component.RuleHelper;
+import process.engine.vo.DataForm;
+import process.engine.vo.DataMain;
+import process.engine.vo.DataWith;
+import process.engine.vo.VoCommitTask;
+import process.engine.vo.VoNewProcInsWithPar
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.LocalDateTime
+import java.util.List;
+import process.engine.data.bpm_ins_node_t.BpmInsNode;
+
+
+//精准发电自动创建工单
+rule "PRECISE_POWER_AUTO_CREATE1"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----->BBBBBBBBB insNodeId: {}#,  PRECISE_POWER_AUTO_CREATE1", $insNodeId);
+        VoNewProcInsWithPar withPar=$helper.getVoNewProcInsWithPar($insNodeId);
+        Map<String,String> map2 = null;
+        if (withPar != null ) {
+            map2 = withPar.getData_transform();
+        }
+       $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: isAuto: {}# ", map2== null ? "NULL" : map2.get("isAuto") );
+        // 人工发起
+        String decision = null;
+        String assignGroupId = null;
+        if (withPar == null ||map2 == null || map2.isEmpty() ||
+            (map2.get("isAuto") != null && map2.get("isAuto").length()>0)) {
+           BpmInsNode insNode = $helper.insNodeFindById($insNodeId);
+            $vo.setAssignUserId(insNode.getUserId());
+            $vo.setAssignUserName(insNode.getUserName());
+            decision = "4";// 流转到【人工派发】节点
+           $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: decision {}#  manual ", decision);
+        } else { // 自动发起
+            String userId ="运维建单人";
+            String deptId ="中国移动通信集团甘肃有限公司";
+            String role ="建单人";
+            map2.put("sendUserid", "ywjdr");
+            map2.put("operationUser", userId);
+            map2.put("department", deptId);
+            map2.put("role", role);
+            map2.put("telephone", "");
+            map2.put("status","1");
+            String operateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            map2.put("operateTime", operateTime);
+            $helper.putFormData($insNodeId, map2);
+
+            // 取到则继续流转；如果取不则，流转到【取地市审核角色】节点
+            String roleId=null;
+            String subRoleId=null;
+            RestIntCall call = $helper.getRestIntCall();
+            List<Map<String, String>> response;
+            String api = "/api/process-engine/query_after_in_condition_2?proc_id=82&node_id=19";// 19：查询【取发电审核角色】节点以后节点的大角色列表
+            response = call.call_2(1, "engine-inf", api, null, null);
+            $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: response.size(): {}# ", response == null ? 0 : response.size());
+            for(Map<String,String> obj: response) {
+//                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: obj.id: {}# ", obj.get("id"));
+//                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: obj.name: {}# ", obj.get("name"));
+//                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: obj.groupId: {}# ", obj.get("groupId"));
+//                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: obj.userId: {}# ", obj.get("userId"));
+                roleId = (String) obj.get("groupId");
+            }
+            $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: 发电审核角色 roleId: {}# ", roleId);
+            // 判断能否取到【县级发电审核】的大角色
+            String county = map2.get("alarmCounty");
+            String city = county==null? null:county.substring(0,4);
+            Map<String,String> searchSubRoleIdMap = new HashMap<>();
+            Map<String,String> subRoleMap = null;
+            if (roleId != null && county != null) {
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1:  county : {}#", county);
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1:  roleId : {}#", roleId);
+
+                searchSubRoleIdMap.put("alarmRegion",county);
+                searchSubRoleIdMap.put("roleId",roleId);
+                subRoleMap = call.call(1, "eserver","/eServer/centralFault/searchSubRole",searchSubRoleIdMap,null);
+                assignGroupId = subRoleMap.get("processRoleId");
+            }
+            if(assignGroupId == null){
+                api = "/api/process-engine/query_after_in_condition_2?proc_id=82&node_id=18"; // 取地市审核角色
+                response = call.call_2(1, "engine-inf", api, null, null);
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: response.size(): {}# ", response == null ? 0 : response.size());
+                if (response != null && !response.isEmpty()) {
+                    roleId = response.get(0).get("groupId");
+                } else {
+                    roleId = "1349907198641311744";
+                }
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1:  city : {}#", city);
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1:  roleId : {}#", roleId);
+
+                searchSubRoleIdMap.clear();
+                searchSubRoleIdMap.put("alarmRegion",city);
+                searchSubRoleIdMap.put("roleId",roleId);
+                subRoleMap = call.call(1, "eserver","/eServer/centralFault/searchSubRole",searchSubRoleIdMap,null);
+                assignGroupId = subRoleMap.get("processRoleId");
+                decision = "6";// 流转到【取地市审核角色】自动节点
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: 地市审核角色 subroleId: {}# ", assignGroupId);
+                if (assignGroupId == null) {
+                    throw new RuntimeException("精准发电接口创建工单，没有找到发电审核、地市审核的处理角色");
+                }
+            } else {
+                decision = "2";// 流转到【取发电审核角色】自动节点
+                $helper.info("-----------> PRECISE_POWER_AUTO_CREATE1: 县级发电审核 subroleId: {}# ", assignGroupId);
+            }
+            $vo.setAssignGroupId(assignGroupId);
+        }
+        $helper.info("----->EEEEEEEEEE insNodeId: {}#,  PRECISE_POWER_AUTO_CREATE1", $insNodeId);
+
+        $vo.setDecision(decision);
+        $vo.setRuleFlag(1);
+end;

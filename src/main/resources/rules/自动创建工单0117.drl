@@ -1,0 +1,55 @@
+package KieRule
+import process.engine.component.RestIntCall;
+import process.engine.component.RuleHelper;
+import process.engine.vo.DataForm;
+import process.engine.vo.DataMain;
+import process.engine.vo.DataWith;
+import process.engine.vo.VoCommitTask;
+import process.engine.vo.VoNewProcInsWithPar
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.LocalDateTime
+import java.util.List;
+
+
+//精准发电自动创建工单
+rule "PRECISE_POWER_AUTO_CREATE1"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----->BBBBBBBBB insNodeId: {}#,  PRECISE_POWER_AUTO_CREATE1", $insNodeId);
+        VoNewProcInsWithPar withPar=$helper.getVoNewProcInsWithPar($insNodeId);
+        Map<String,String> map2 = null;
+        if (withPar != null ) {
+            map2 = withPar.getData_transform();
+        }
+        // 人工发起
+        String decision = null;
+        String assignGroupId = null;
+        if (withPar == null ||map2 == null || map2.isEmpty() ||
+            (map2.get("isAuto") != null && map2.get("isAuto").length()>0)) {
+            decision = "4";
+        } else { // 自动发起
+            String userId ="运维建单人";
+            String deptId ="中国移动通信集团甘肃有限公司";
+            String roleId ="建单人";
+            map2.put("sendUserid", "ywjdr");
+            map2.put("operationUser", userId);
+            map2.put("department", deptId);
+            map2.put("role", roleId);
+            map2.put("telephone", "");
+            map2.put("status","1");
+            String operateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            map2.put("operateTime", operateTime);
+            $helper.putFormData($insNodeId, map2);
+            $helper.info("----->EEEEEEEEEE insNodeId: {}#,  PRECISE_POWER_AUTO_CREATE1", $insNodeId);
+            decision = "2";
+        }
+
+        $vo.setDecision(decision);
+        $vo.setRuleFlag(1);
+end;

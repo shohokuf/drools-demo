@@ -1,0 +1,120 @@
+
+
+/* 需要调用后台接口
+自动稽核根据稽核模型在24小时内计算得出是否通过稽核。通过则提交自动归档，不通过提交人工审核。
+稽核条件：
+1、	发电开始时间与动环停电结束时间(即告警恢复时间)前后相差在20分钟以上;
+2、	发电开始时间与动环门禁告警时间前后相差在20分以上；
+3、	发电结束时间与动环门禁告警时间前后相差在20分以上；
+4、	发电开始时间与动环停电告警时间(即告警发生时间)相差在8小时以上；
+5、	发电开始时间早于停电开始时间(即告警发生时间)。
+6、	发电工单签到方式为非“经纬度签到”，而是照片签到。
+7、	人工派单；
+8、	超长发电(发电时长大于等于12小时)；
+    String city = map2.get("cityId");
+    String fgdStartCt = map2.get("fgd_start_ct");                  //发电开始时间与动环停电结束时间(即告警恢复时间)前后相差在20分钟以上;
+    String fgdStartNoAlarm = map2.get("fgd_start_no_alarm");             //发电开始时间与动环门禁告警时间前后相差在20分以上；
+    String fgdEndNoAlarm = map2.get("fgd_end_no_alarm");               //发电结束时间与动环门禁告警时间前后相差在20分以上；
+    String fgdStartAlarm8 = map2.get("fgd_start_alarm8");              //发电开始时间与动环停电告警时间(即告警发生时间)相差在8小时以上
+    String fgdStartBfPowerCut =  map2.get("fgdStart_bf_power_cut");          //发电开始时间早于停电开始时间(即告警发生时间)
+    String type = map2.get("");                            //发电工单签到方式为非“经纬度签到”，而是照片签到
+    String order = map2.get("");                            //人工派单；
+    String powerGeneratDuration = map2.get("power_generat_duration");        //发电时长
+有效发电稽核规则：前6种规则中第6种和其它5种规则搭配使用，满足6后，其它5种必须满足一种，才能自动稽核通过；
+满足7或8任何一条规则，则不能通过自动稽核规则；
+未自动稽核通过的工单，流转到人工审核环节。
+分析：
+1 人工审核：
+    7
+*/
+package KieRule
+
+import process.engine.component.RestIntCall;
+import process.engine.component.RuleHelper;
+import process.engine.vo.DataForm;
+import process.engine.vo.DataMain;
+import process.engine.vo.DataWith;
+import process.engine.vo.VoCommitTask;
+import process.engine.vo.VoNewProcInsWithPar
+import java.util.HashMap
+import java.util.Map
+import java.lang.String
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.LocalDateTime
+import java.util.List;
+
+//自动稽查
+rule "PRECISE_POWER_GET_AUTO_CHECK"
+    when
+        $vo: VoCommitTask($insNodeId : insNodeId);
+        $helper : RuleHelper();
+    then
+        $helper.info("----------->BBBBBBBBB PRECISE_POWER_GET_AUTO_CHECK: insNodeId: {}# ", $insNodeId);
+
+        String roleId=null;
+        String decision = "0";
+        String assignGroupId = null;
+        // 获取下一个节点大角色
+        RestIntCall call = $helper.getRestIntCall();
+        List<Map<String, String>> response;
+        String api = "/api/process-engine/query_after_in_condition_2?proc_id=82&node_id=7";
+        response = call.call_2(1, "engine-inf", api, null, null);
+
+        $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: response.size(): {}# ", response == null ? 0 : response.size());
+
+        for(Map<String,String> obj: response) {
+            $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: obj.id: {}# ", obj.get("id"));
+            $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: obj.name: {}# ", obj.get("name"));
+            $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: obj.groupId: {}# ", obj.get("groupId"));
+            $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: obj.userId: {}# ", obj.get("userId"));
+            if (obj.get("id").equals("12")) {
+                roleId = (String) obj.get("groupId");
+            }
+        }
+        $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: roleId: {}# ", roleId);
+
+        // 调用后台自动稽核服务
+        Map<String,String> mapMain = $helper.getMainData($insNodeId);
+        api = "/api/genElectricity/autoCheck";
+        Map<String,String> map1 = new HashMap<>();
+        map1.put("insNodeId", String.valueOf($insNodeId));
+        Map<String,String> map3= call.call(1, "form",api, map1,null);
+        int result = 2;
+        if (map3 != null && !map3.isEmpty()) {
+            // map3返回格式 --  {"data":{1},"status":0}
+            int status = Integer.parseInt(String.valueOf(map3.get("status")));
+            if (status == 0 && map3.get("data") != null) {
+                result = Integer.parseInt(String.valueOf(map3.get("data")));
+            }
+        } else {
+            result = 0;
+        }
+        $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: api result: {}# ", result);
+
+        switch(result) {
+            case 0:  // 不通过
+                // 计算人核查子角色
+                Map<String,String> searchSubRoleIdMap = new HashMap<>();
+                searchSubRoleIdMap.put("alarmRegion",mapMain.get("county_id1"));// 取县级审核子角色
+                searchSubRoleIdMap.put("roleId",roleId);
+                Map<String,String> subRoleMap = call.call(1, "eserver","/eServer/centralFault/searchSubRole",searchSubRoleIdMap,null);
+                assignGroupId = subRoleMap.get("processRoleId");
+                $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK:  assignGroupId: {}# ", assignGroupId);
+                if (assignGroupId == null || assignGroupId.equals(roleId) || assignGroupId.isEmpty()) {
+                    throw new RuntimeException("获取人工核查子角色异常： " + $insNodeId);
+                }
+                $vo.setAssignGroupId(assignGroupId);
+                decision = "12";// 人工核查
+                break;
+            case 1: // 1 通过
+                decision = "15";// 自动归档
+                break;
+            default:  // 2 等待
+                decision = "11";// 定时结点
+                break;
+        }
+        $helper.info("-----------> PRECISE_POWER_GET_AUTO_CHECK: decision: {}# ", decision);
+        $vo.setDecision(decision);
+        $vo.setRuleFlag(1);
+    end;
